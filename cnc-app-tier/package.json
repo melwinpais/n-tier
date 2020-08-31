@@ -1,0 +1,19 @@
+{
+  "name": "cnc-geoserver",
+  "version": "1.0.0",
+  "description": "A tiny web app",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "circular-json": "^0.5.9",
+    "express": "^4.16.4",
+    "express-healthcheck": "^0.1.0",
+    "fs": "0.0.1-security",
+    "pg": "^8.3.3",
+    "request": "^2.88.0"
+  }
+}

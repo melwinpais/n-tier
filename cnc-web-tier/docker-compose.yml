@@ -1,0 +1,15 @@
+version: '3'
+services:
+  cnc-webapp:
+    environment:
+      - GEOSERVER_URL=http://cnc-geoserver.service:3000/data
+      - APP1_URL=http:/cnc-mock.service:3000
+    image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/dod-cnc/cnc-webapp:latest
+    ports:
+      - "3000:3000"
+    logging:
+      driver: awslogs
+      options: 
+        awslogs-group: cnc-webapp
+        awslogs-region: ${AWS_REGION}
+        awslogs-stream-prefix: cnc-webapp

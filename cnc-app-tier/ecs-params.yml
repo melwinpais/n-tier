@@ -1,0 +1,22 @@
+version: 1
+task_definition:
+  task_execution_role: arn:aws:iam::362430232425:role/dod-cnc-base-ECSTaskExecutionRole-18ZHEQBBIC3XB
+  ecs_network_mode: awsvpc
+  task_size:
+    mem_limit: 0.5GB
+    cpu_limit: 256
+run_params:
+  network_configuration:
+    awsvpc_configuration:
+      subnets:
+        - "subnet-02ccbdbe788034a50"
+        - "subnet-0aa7d54affecccf79"
+        - "subnet-02a3f5a7aae642cf9"
+      security_groups:
+        - "sg-07db43b7ec0ebdb64"
+      assign_public_ip: DISABLED
+  service_discovery:
+    container_name: cnc-geoserver
+    service_discovery_service:
+        name: cnc-geoserver
+        description: string
