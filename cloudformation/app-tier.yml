@@ -1,0 +1,332 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: App tier
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dod-cnc-sandbox
+    Description: "A friendly environment name that will be used for namespacing all cluster resources. Example: staging, qa, or production"
+  ServiceName:
+    Type: String
+    Default: cnc-geoserver
+    Description: "A fname of the service"
+  MinContainers:
+    Type: Number
+    Default: 1
+  # for autoscaling
+  MaxContainers:
+    Type: Number
+    Default: 10
+  # target CPU utilization (%)
+  AutoScalingTargetValue:
+    Type: Number
+    Default: 10
+Resources:
+  # BackendServicesSecGrpfromBackendFargateLBServiceSecurityGroup:
+  #   Type: 'AWS::EC2::SecurityGroupIngress'
+  #   Properties:
+  #     IpProtocol: tcp
+  #     Description: >-
+  #       from front end to back end
+  #     FromPort: 3000
+  #     GroupId: 
+  #       'Fn::ImportValue':
+  #         'Fn::Sub': ${EnvironmentName}:BackendToBackendSecurityGroup
+  #     SourceSecurityGroupId: !GetAtt 
+  #       - BackendFargateLBServiceSecurityGroup
+  #       - GroupId
+  #     ToPort: 3000
+  # BackendFargateLBServiceLB:
+  #   Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+  #   Properties:
+  #     Scheme: internet-facing
+  #     SecurityGroups:
+  #       - !GetAtt 
+  #         - BackendFargateLBServiceLBSecurityGroup
+  #         - GroupId
+  #     Subnets:
+  #       - 'Fn::ImportValue':
+  #           'Fn::Sub': ${EnvironmentName}:PublicSubnetOne
+  #       - 'Fn::ImportValue':
+  #           'Fn::Sub': ${EnvironmentName}:PublicSubnetTwo
+  #       - 'Fn::ImportValue':
+  #           'Fn::Sub': ${EnvironmentName}:PublicSubnetThree  
+  #     Type: application
+  # BackendFargateLBServiceLBSecurityGroup:
+  #   Type: 'AWS::EC2::SecurityGroup'
+  #   Properties:
+  #     GroupDescription: >-
+  #       Automatically created Security Group for ELB
+  #     SecurityGroupIngress:
+  #       - CidrIp: 0.0.0.0/0
+  #         Description: Allow from anyone on port 80
+  #         FromPort: 80
+  #         IpProtocol: tcp
+  #         ToPort: 80
+  #     VpcId: 
+  #       'Fn::ImportValue':
+  #         'Fn::Sub': ${EnvironmentName}:VpcId
+  # BackendFargateLBServiceLBSecurityGrouptoBackendFargateLBServiceSecurityGroup:
+  #   Type: 'AWS::EC2::SecurityGroupEgress'
+  #   Properties:
+  #     GroupId: !GetAtt 
+  #       - BackendFargateLBServiceLBSecurityGroup
+  #       - GroupId
+  #     IpProtocol: tcp
+  #     Description: Load balancer to target
+  #     DestinationSecurityGroupId: !GetAtt 
+  #       - BackendFargateLBServiceSecurityGroup
+  #       - GroupId
+  #     FromPort: 3000
+  #     ToPort: 3000
+  # BackendFargateLBServiceLBPublicListener:
+  #   Type: 'AWS::ElasticLoadBalancingV2::Listener'
+  #   Properties:
+  #     DefaultActions:
+  #       - TargetGroupArn: !Ref BackendFargateLBServiceLBPublicListenerECSGroup
+  #         Type: forward
+  #     LoadBalancerArn: !Ref BackendFargateLBServiceLB
+  #     Port: 80
+  #     Protocol: HTTP
+  # BackendFargateLBServiceLBPublicListenerECSGroup:
+  #   Type: AWS::ElasticLoadBalancingV2::TargetGroup
+  #   Properties:
+  #     TargetType: ip
+  #     HealthCheckIntervalSeconds: 10
+  #     HealthCheckPath: /health
+  #     HealthCheckPort: 3000
+  #     HealthCheckProtocol: HTTP
+  #     HealthCheckTimeoutSeconds: 5
+  #     HealthyThresholdCount: 2
+  #     Matcher:
+  #       HttpCode: '200-299'
+  #     Port: 80
+  #     Protocol: HTTP
+  #     UnhealthyThresholdCount: 10
+  #     VpcId:
+  #       Fn::ImportValue: !Sub ${EnvironmentName}:VpcId
+  #     TargetGroupAttributes:
+  #     - Key: deregistration_delay.timeout_seconds
+  #       Value: '5'
+  #     - Key: slow_start.duration_seconds
+  #       Value: '60'
+  BackendFargateLBServiceTaskDefTaskRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+  BackendFargateLBServiceTaskDefTaskRoleDefaultPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: 'ec2:DescribeSubnets'
+            Effect: Allow
+            Resource: '*'
+        Version: 2012-10-17
+      PolicyName: BackendFargateLBServiceTaskDefTaskRoleDefaultPolicy
+      Roles:
+        - !Ref BackendFargateLBServiceTaskDefTaskRole
+  BackendFargateLBServiceTaskDef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+        - Environment:
+            - Name: DB_URL
+              Value: 'http://cnc-data.service:3000/data'
+            - Name: REGION
+              Value: !Ref 'AWS::Region'
+          Essential: true
+          Image: !Join [ '.', [!Ref 'AWS::AccountId', 'dkr.ecr', !Ref 'AWS::Region', 'amazonaws.com/dod-cnc/cnc-geoserver:latest' ]]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BackendFargateLBServiceTaskDefwebLogGroup
+              awslogs-stream-prefix: BackendFargateLBService
+              awslogs-region: !Ref 'AWS::Region'
+          Name: web
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+      Cpu: '256'
+      ExecutionRoleArn: 
+        'Fn::ImportValue':
+          'Fn::Sub': ${EnvironmentName}:ECSTaskExecutionRole
+      Family: BackendFargateLBServiceTaskDef
+      Memory: '512'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      TaskRoleArn: !GetAtt 
+        - BackendFargateLBServiceTaskDefTaskRole
+        - Arn
+  BackendFargateLBServiceTaskDefwebLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+  BackendFargateLBServiceTaskDefExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+  BackendFargateLBServiceTaskDefExecutionRoleDefaultPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+              # Allow the ECS Tasks to download images from ECR
+              - 'ecr:GetAuthorizationToken'
+              - 'ecr:BatchCheckLayerAvailability'
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:BatchGetImage'
+            Resource: '*'          
+          - Effect: Allow
+            Action:
+              # Allow the ECS Tasks to talk to RDS
+              - 'rds-data:ExecuteStatement'
+              - 'rds:*' # FIXME
+            Resource: '*'      
+          - Action:
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Effect: Allow
+            Resource: !GetAtt 
+              - BackendFargateLBServiceTaskDefwebLogGroup
+              - Arn
+        Version: 2012-10-17
+      PolicyName: BackendFargateLBServiceTaskDefExecutionRoleDefaultPolicy
+      Roles:
+        - !Ref BackendFargateLBServiceTaskDefExecutionRole
+  BackendFargateLBService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      Cluster: 
+        'Fn::ImportValue':
+          'Fn::Sub': ${EnvironmentName}:ECSClusterName
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 50
+      DesiredCount: 1
+      EnableECSManagedTags: false
+      # HealthCheckGracePeriodSeconds: 60
+      LaunchType: FARGATE
+      # LoadBalancers:
+      #   - ContainerName: web
+      #     ContainerPort: 3000
+      #     TargetGroupArn: !Ref BackendFargateLBServiceLBPublicListenerECSGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !GetAtt 
+              - BackendFargateLBServiceSecurityGroup
+              - GroupId
+          Subnets:
+            - 'Fn::ImportValue':
+                'Fn::Sub': ${EnvironmentName}:AppSubnetOne
+            - 'Fn::ImportValue':
+                'Fn::Sub': ${EnvironmentName}:AppSubnetTwo
+            - 'Fn::ImportValue':
+                'Fn::Sub': ${EnvironmentName}:AppSubnetThree  
+      ServiceName: !Ref ServiceName
+      ServiceRegistries:
+        - RegistryArn: !GetAtt 
+            - BackendFargateLBServiceCloudmapService
+            - Arn
+      TaskDefinition: !Ref BackendFargateLBServiceTaskDef
+    # DependsOn:
+    #   - BackendFargateLBServiceLBPublicListenerECSGroup
+    #   - BackendFargateLBServiceLBPublicListener
+  BackendFargateLBServiceCloudmapService:
+    Type: 'AWS::ServiceDiscovery::Service'
+    Properties:
+      DnsConfig:
+        DnsRecords:
+          - TTL: 60
+            Type: A
+        NamespaceId: 
+          'Fn::ImportValue':
+            'Fn::Sub': ${EnvironmentName}:NSID
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: cnc-geoserver
+      NamespaceId: 
+        'Fn::ImportValue':
+          'Fn::Sub': ${EnvironmentName}:NSID
+  BackendFargateLBServiceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: BackendFargateLBService/Service/SecurityGroup
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: '-1'
+      VpcId: 
+        'Fn::ImportValue':
+          'Fn::Sub': ${EnvironmentName}:VpcId
+  BackendFargateLBServiceSecurityGroupAccessfromWebApp:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      IpProtocol: tcp
+      Description: Allow traffic from web app
+      FromPort: 3000
+      GroupId: !GetAtt 
+        - BackendFargateLBServiceSecurityGroup
+        - GroupId
+      SourceSecurityGroupId:
+        'Fn::ImportValue':
+          'Fn::Sub': ${EnvironmentName}:FrontendFargateLBServiceSecurityGroup        
+      ToPort: 3000
+  AutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MinCapacity: !Ref MinContainers
+      MaxCapacity: !Ref MaxContainers
+      ResourceId: !Join ['/', [service, {'Fn::ImportValue': !Sub '${EnvironmentName}:ECSClusterName'}, !Ref ServiceName]]
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+      # "The Amazon Resource Name (ARN) of an AWS Identity and Access Management (IAM) role that allows Application Auto Scaling to modify your scalable target."
+      RoleARN: {'Fn::ImportValue': !Sub '${EnvironmentName}:AutoscalingRole'}
+  AutoScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Join ['', [!Ref ServiceName, AutoScalingPolicy]]
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref AutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        ScaleInCooldown: 10
+        ScaleOutCooldown: 10
+        # Keep things at or lower than 50% CPU utilization, for example
+        TargetValue: !Ref AutoScalingTargetValue
+      
+Outputs:
+#   BackendFargateLBServiceLoadBalancerDNS:
+#     Value: !GetAtt 
+#       - BackendFargateLBServiceLB
+#       - DNSName
+#   BackendFargateLBServiceServiceURL:
+#     Value: !Join 
+#       - ''
+#       - - 'http://'
+#         - !GetAtt 
+#           - BackendFargateLBServiceLB
+#           - DNSName
+  BackendFargateLBServiceSecurityGroup:
+    Description: A security group used to host app layer
+    Value: !Ref 'BackendFargateLBServiceSecurityGroup'
+    Export:
+      Name: !Sub ${EnvironmentName}:BackendFargateLBServiceSecurityGroup          
